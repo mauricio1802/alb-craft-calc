@@ -888,16 +888,16 @@ function renderRows(rows) {
 
       return `
         <tr class="${profitable ? "profitable" : ""}">
-          <td><span class="item-name">${escapeHtml(row.name)}</span></td>
-          <td class="num">${row.tier ? `T${row.tier}` : "-"}</td>
-          <td>${escapeHtml(row.category || "Other")}</td>
-          <td class="num">.${Number(row.enchantment || 0)}</td>
-          <td class="num">${formatSilver(row.sellPrice)}</td>
-          <td class="num">${row.sellVolume > 0 ? formatSilver(row.sellVolume) : "-"}</td>
-          <td class="num">${row.isComplete ? formatSilver(row.craftCost) : "-"}</td>
-          <td class="num ${profitClass}">${row.isComplete ? formatSilver(row.profit) : "-"}</td>
-          <td class="num ${profitClass}">${row.isComplete ? `${marginPct.toFixed(1)}%` : "-"}</td>
-          <td class="num soft">${row.missingCount}</td>
+          <td data-label="Item"><span class="item-name">${escapeHtml(row.name)}</span></td>
+          <td data-label="Tier" class="num">${row.tier ? `T${row.tier}` : "-"}</td>
+          <td data-label="Category">${escapeHtml(row.category || "Other")}</td>
+          <td data-label="Enchant" class="num">.${Number(row.enchantment || 0)}</td>
+          <td data-label="Sell Price" class="num">${formatSilver(row.sellPrice)}</td>
+          <td data-label="Est. Sell/Day (30d)" class="num">${row.sellVolume > 0 ? formatSilver(row.sellVolume) : "-"}</td>
+          <td data-label="Craft Cost" class="num">${row.isComplete ? formatSilver(row.craftCost) : "-"}</td>
+          <td data-label="Profit" class="num ${profitClass}">${row.isComplete ? formatSilver(row.profit) : "-"}</td>
+          <td data-label="Margin" class="num ${profitClass}">${row.isComplete ? `${marginPct.toFixed(1)}%` : "-"}</td>
+          <td data-label="Missing Prices" class="num soft">${row.missingCount}</td>
         </tr>
       `;
     })

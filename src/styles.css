@@ -318,3 +318,127 @@ tbody tr.profitable {
     align-items: flex-start;
   }
 }
+
+@media (max-width: 760px) {
+  .topbar {
+    padding: 1rem 0.8rem;
+  }
+
+  .topbar h1 {
+    font-size: 1.2rem;
+  }
+
+  .topbar p {
+    font-size: 0.9rem;
+  }
+
+  .layout {
+    padding: 0.6rem;
+    gap: 0.7rem;
+  }
+
+  .card {
+    padding: 0.75rem;
+    border-radius: 10px;
+  }
+
+  .results-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+
+  .tab-btn {
+    width: 100%;
+  }
+
+  .results-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .bonus-grid {
+    grid-template-columns: 1fr 96px;
+  }
+
+  #panelCalculator .table-wrap {
+    border: 0;
+    margin-top: 0.6rem;
+    overflow: visible;
+    max-height: none;
+    background: transparent;
+  }
+
+  #panelCalculator .table-wide {
+    width: 100%;
+    min-width: 0;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  #panelCalculator .table-wide thead {
+    display: none;
+  }
+
+  #panelCalculator .table-wide tbody {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  #panelCalculator .table-wide tbody tr {
+    display: block;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fffdf8;
+    padding: 0.2rem 0.45rem 0.35rem;
+  }
+
+  #panelCalculator .table-wide tbody tr.profitable {
+    border-color: #93c49a;
+  }
+
+  #panelCalculator .table-wide tbody td {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.65rem;
+    border-bottom: 1px dashed #e8dcc8;
+    padding: 0.38rem 0.15rem;
+    text-align: right;
+  }
+
+  #panelCalculator .table-wide tbody td:last-child {
+    border-bottom: 0;
+  }
+
+  #panelCalculator .table-wide tbody td::before {
+    content: attr(data-label);
+    font-weight: 700;
+    color: var(--ink-soft);
+    text-align: left;
+  }
+
+  #panelCalculator .table-wide tbody td[data-label="Item"] {
+    display: block;
+    text-align: left;
+    border-bottom-style: solid;
+  }
+
+  #panelCalculator .table-wide tbody td[data-label="Item"]::before {
+    display: none;
+  }
+
+  #panelCalculator .table-wide tbody td[data-label="Item"] .item-name {
+    font-size: 1rem;
+  }
+
+  #panelCalculator .table-wide tbody td[colspan] {
+    display: block;
+    text-align: left;
+    border-bottom: 0;
+    padding: 0.5rem 0.3rem;
+  }
+
+  #panelCalculator .table-wide tbody td[colspan]::before {
+    display: none;
+  }
+}
