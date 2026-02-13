@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Albion Crafting Calculator</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>Albion Crafting Calculator</h1>
+      <p>City-local crafting profitability with live market prices</p>
+    </header>
+
+    <main class="layout">
+      <section class="card controls">
+        <h2>Controls</h2>
+
+        <label for="city">Market / Crafting City</label>
+        <select id="city">
+          <option>Bridgewatch</option>
+          <option>Caerleon</option>
+          <option>Fort Sterling</option>
+          <option>Lymhurst</option>
+          <option>Martlock</option>
+          <option>Thetford</option>
+          <option>Brecilien</option>
+        </select>
+
+        <label class="toggle-row">
+          <input id="useBlackMarketSell" type="checkbox" />
+          Use Black Market Price
+        </label>
+
+        <label for="marginThreshold">Highlight Margin >= (%)</label>
+        <input id="marginThreshold" type="number" min="0" step="1" value="20" />
+
+        <label for="craftTax">Crafting Tax (%)</label>
+        <input id="craftTax" type="number" min="0" step="0.1" value="4" />
+
+        <div class="bonus-grid">
+          <h3>Resource Return Bonuses</h3>
+
+          <label class="toggle-row">
+            <input id="premiumEnabled" type="checkbox" checked />
+            Premium
+          </label>
+          <input id="premiumRate" type="number" min="0" max="95" step="0.1" value="15.2" />
+
+          <label class="toggle-row">
+            <input id="cityBonusEnabled" type="checkbox" checked />
+            City Bonus
+          </label>
+          <input id="cityBonusRate" type="number" min="0" max="95" step="0.1" value="10" />
+
+          <label class="toggle-row">
+            <input id="focusEnabled" type="checkbox" />
+            Focus
+          </label>
+          <input id="focusRate" type="number" min="0" max="95" step="0.1" value="20" />
+        </div>
+
+        <div class="btn-row">
+          <button id="refreshBtn">Fetch Prices</button>
+          <button id="forceRefreshBtn" type="button" class="secondary-btn">Force Fetch API</button>
+        </div>
+        <p id="status" class="status"></p>
+      </section>
+
+      <section class="card results">
+        <div class="results-tabs">
+          <button id="tabCalculator" class="tab-btn active" type="button">
+            Calculator
+          </button>
+          <button id="tabPrices" class="tab-btn" type="button">
+            Price Editor
+          </button>
+        </div>
+
+        <section id="panelCalculator">
+          <div class="results-head">
+            <h2>Profitable Crafts</h2>
+            <div class="results-filters">
+              <input id="search" type="search" placeholder="Filter by item name..." />
+              <select id="filterTier">
+                <option value="">All Tiers</option>
+                <option value="2">T2</option>
+                <option value="3">T3</option>
+                <option value="4">T4</option>
+                <option value="5">T5</option>
+                <option value="6">T6</option>
+                <option value="7">T7</option>
+                <option value="8">T8</option>
+              </select>
+              <select id="filterCategory">
+                <option value="">All Categories</option>
+              </select>
+              <select id="filterEnchant">
+                <option value="">All Enchants</option>
+                <option value="0">.0</option>
+                <option value="1">.1</option>
+                <option value="2">.2</option>
+                <option value="3">.3</option>
+                <option value="4">.4</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="table-wide">
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Tier</th>
+                  <th>Category</th>
+                  <th>Enchant</th>
+                  <th>Sell Price</th>
+                  <th>Est. Sell/Day (30d)</th>
+                  <th>Craft Cost</th>
+                  <th>Profit</th>
+                  <th>Margin</th>
+                  <th>Missing Prices</th>
+                </tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="panelPrices" class="hidden">
+          <div class="price-actions">
+            <h2>Price Editor</h2>
+            <div class="btn-row">
+              <button id="refreshPricesBtn" type="button">Fetch Prices</button>
+              <button id="forceRefreshPricesBtn" type="button" class="secondary-btn">Force Fetch API</button>
+            </div>
+          </div>
+
+          <p class="soft">
+            This tab edits cached prices directly for the selected city.
+          </p>
+
+          <div class="results-filters price-editor-filters">
+            <input id="priceSearch" type="search" placeholder="Filter prices by item name..." />
+            <select id="priceFilterTier">
+              <option value="">All Tiers</option>
+              <option value="2">T2</option>
+              <option value="3">T3</option>
+              <option value="4">T4</option>
+              <option value="5">T5</option>
+              <option value="6">T6</option>
+              <option value="7">T7</option>
+              <option value="8">T8</option>
+            </select>
+            <select id="priceFilterCategory">
+              <option value="">All Categories</option>
+            </select>
+            <select id="priceFilterEnchant">
+              <option value="">All Enchants</option>
+              <option value="0">.0</option>
+              <option value="1">.1</option>
+              <option value="2">.2</option>
+              <option value="3">.3</option>
+              <option value="4">.4</option>
+            </select>
+          </div>
+
+          <details class="price-section" open>
+            <summary>Common Materials</summary>
+            <div class="table-wrap table-wrap-sm">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Cached Price</th>
+                    <th>Edit Price</th>
+                    <th>Used Price</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="commonMaterialRows"></tbody>
+              </table>
+            </div>
+          </details>
+
+          <details class="price-section" open>
+            <summary>Artifacts</summary>
+            <div class="table-wrap table-wrap-sm">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Cached Price</th>
+                    <th>Edit Price</th>
+                    <th>Used Price</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="artifactRows"></tbody>
+              </table>
+            </div>
+          </details>
+
+          <details class="price-section" open>
+            <summary>Crafted Items</summary>
+            <div class="table-wrap table-wrap-sm">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Cached Price</th>
+                    <th>Edit Price</th>
+                    <th>Used Price</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="itemPriceRows"></tbody>
+              </table>
+            </div>
+          </details>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/src/app.js"></script>
+  </body>
+</html>
