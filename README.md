@@ -17,7 +17,7 @@ Local web interface to estimate crafting profitability per city in Albion Online
 - `Price Editor` supports filters by search text, Tier, Category, and Enchantment.
 - `Price Editor` sections are collapsible/expandable.
 - Prices are stored in a local browser cache (default `0` when missing).
-- `Fetch Prices` is cache-first: it loads cached prices and only calls API for missing prices in current filter scope.
+- `Fetch Prices` is cache-first: it loads cached prices and only calls API for prices that are missing (`0`) or older than 1 hour in current filter scope.
 - `Force Fetch API` refreshes scoped prices from API even when already cached.
 - Manual edits in `Price Editor` write directly to the same cache used by calculations.
 - Prices are fetched only when you click `Fetch Prices`.

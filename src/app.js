@@ -5,6 +5,7 @@ const NORMAL_QUALITY = 1;
 const SELL_AVERAGE_DAYS = 1;
 const BLACK_MARKET_SELL_AVERAGE_DAYS = 7;
 const SELL_VOLUME_AVERAGE_DAYS = 30;
+const PRICE_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 
 const ui = {
   city: document.getElementById("city"),
@@ -144,16 +145,53 @@ function getSourceCacheObject(city, source) {
   return {};
 }
 
+function normalizeCacheTimestamp(raw) {
+  const ts = Number(raw);
+  return Number.isFinite(ts) && ts > 0 ? ts : 0;
+}
+
+function normalizeCachePrice(raw) {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+}
+
+function parseCacheEntry(raw) {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const price = normalizeCachePrice(raw.p ?? raw.price ?? raw.value ?? 0);
+    const timestamp = normalizeCacheTimestamp(raw.ts ?? raw.t ?? raw.updatedAt ?? 0);
+    return { price, timestamp };
+  }
+
+  // Legacy format was a plain number without timestamp.
+  return {
+    price: normalizeCachePrice(raw),
+    timestamp: 0,
+  };
+}
+
+function getCachedEntry(city, source, itemId) {
+  const raw = getSourceCacheObject(city, source)?.[itemId];
+  return parseCacheEntry(raw);
+}
+
 function getCachedPrice(city, source, itemId) {
-  const value = Number(getSourceCacheObject(city, source)?.[itemId]);
-  return Number.isFinite(value) && value > 0 ? value : 0;
+  return getCachedEntry(city, source, itemId).price;
+}
+
+function isCachedEntryStale(entry, nowMs = Date.now()) {
+  if (!entry || entry.price <= 0) return true;
+  if (entry.timestamp <= 0) return true;
+  return nowMs - entry.timestamp >= PRICE_CACHE_MAX_AGE_MS;
 }
 
 function setCachedPrice(city, source, itemId, price, persist = true) {
   const target = getSourceCacheObject(city, source);
-  const rounded = Math.round(Number(price) || 0);
+  const rounded = normalizeCachePrice(price);
   if (rounded > 0) {
-    target[itemId] = rounded;
+    target[itemId] = {
+      p: rounded,
+      ts: Date.now(),
+    };
   } else {
     delete target[itemId];
   }
@@ -187,7 +225,10 @@ function buildMapFromCache(city, source, itemIds) {
 }
 
 function collectMissingPriceIds(city, source, itemIds) {
-  return itemIds.filter((itemId) => getCachedPrice(city, source, itemId) <= 0);
+  const nowMs = Date.now();
+  return itemIds.filter((itemId) =>
+    isCachedEntryStale(getCachedEntry(city, source, itemId), nowMs)
+  );
 }
 
 function readBonusRate(enabledEl, rateEl) {
