@@ -120,11 +120,52 @@
                   <th>Profit</th>
                   <th>Margin</th>
                   <th>Missing Prices</th>
+                  <th>Plan</th>
                 </tr>
               </thead>
               <tbody id="rows"></tbody>
             </table>
           </div>
+
+          <section class="craft-plan">
+            <div class="price-actions">
+              <h3>Craft Plan</h3>
+              <button id="clearPlanBtn" type="button" class="secondary-btn">Clear Plan</button>
+            </div>
+            <p class="soft">
+              Add items from the calculator table, set quantities, and review materials to buy.
+            </p>
+
+            <div class="table-wrap table-wrap-sm">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="planRows"></tbody>
+              </table>
+            </div>
+
+            <h3>Materials To Buy</h3>
+            <div class="table-wrap table-wrap-sm">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Material</th>
+                    <th>Required Qty</th>
+                    <th>Buy Qty</th>
+                    <th>Unit Price</th>
+                    <th>Est. Cost</th>
+                  </tr>
+                </thead>
+                <tbody id="planMaterialRows"></tbody>
+              </table>
+            </div>
+            <p id="planTotals" class="soft"></p>
+          </section>
         </section>
 
         <section id="panelPrices" class="hidden">

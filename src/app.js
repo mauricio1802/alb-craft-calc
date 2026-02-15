@@ -32,6 +32,10 @@ const ui = {
   filterTier: document.getElementById("filterTier"),
   filterCategory: document.getElementById("filterCategory"),
   filterEnchant: document.getElementById("filterEnchant"),
+  clearPlanBtn: document.getElementById("clearPlanBtn"),
+  planRows: document.getElementById("planRows"),
+  planMaterialRows: document.getElementById("planMaterialRows"),
+  planTotals: document.getElementById("planTotals"),
 
   refreshPricesBtn: document.getElementById("refreshPricesBtn"),
   forceRefreshPricesBtn: document.getElementById("forceRefreshPricesBtn"),
@@ -63,6 +67,9 @@ const priceCatalog = {
   nameById: new Map(),
   metaById: new Map(),
 };
+const recipeById = new Map();
+const expandedCraftRows = new Set();
+const craftPlan = new Map();
 
 function setStatus(text) {
   ui.status.textContent = text;
@@ -145,6 +152,36 @@ function getSourceCacheObject(city, source) {
   return {};
 }
 
+function canonicalizeItemId(itemId) {
+  const id = String(itemId || "").trim();
+  if (!id) return "";
+  if (id.endsWith("@0")) {
+    return id.slice(0, -2);
+  }
+  if (id.endsWith("_LEVEL0")) {
+    return id.slice(0, -7);
+  }
+  return id;
+}
+
+function getItemIdAliases(itemId) {
+  const aliases = [];
+  const add = (value) => {
+    if (!value) return;
+    if (!aliases.includes(value)) aliases.push(value);
+  };
+
+  const raw = String(itemId || "").trim();
+  const canonical = canonicalizeItemId(raw);
+
+  add(raw);
+  add(canonical);
+  if (canonical && !canonical.includes("@")) add(`${canonical}@0`);
+  if (canonical && !canonical.endsWith("_LEVEL0")) add(`${canonical}_LEVEL0`);
+
+  return aliases;
+}
+
 function normalizeCacheTimestamp(raw) {
   const ts = Number(raw);
   return Number.isFinite(ts) && ts > 0 ? ts : 0;
@@ -170,8 +207,25 @@ function parseCacheEntry(raw) {
 }
 
 function getCachedEntry(city, source, itemId) {
-  const raw = getSourceCacheObject(city, source)?.[itemId];
-  return parseCacheEntry(raw);
+  const sourceObj = getSourceCacheObject(city, source);
+  const aliases = getItemIdAliases(itemId);
+  for (const alias of aliases) {
+    if (Object.prototype.hasOwnProperty.call(sourceObj, alias)) {
+      return parseCacheEntry(sourceObj[alias]);
+    }
+  }
+  return { price: 0, timestamp: 0 };
+}
+
+function getMapPriceByAliases(map, itemId) {
+  if (!(map instanceof Map)) return 0;
+  for (const alias of getItemIdAliases(itemId)) {
+    const value = Number(map.get(alias) || 0);
+    if (Number.isFinite(value) && value > 0) {
+      return value;
+    }
+  }
+  return 0;
 }
 
 function getCachedPrice(city, source, itemId) {
@@ -631,6 +685,305 @@ function applyCurrentCacheAndRender() {
     recomputeAndRender();
   }
   renderPriceEditor();
+  renderCraftPlan();
+}
+
+function formatQty(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return "0";
+  if (Math.abs(num - Math.round(num)) < 0.00001) {
+    return String(Math.round(num));
+  }
+  return num.toFixed(2);
+}
+
+function getPlanMaterialUnitPrice(itemId) {
+  const fromMap = getMapPriceByAliases(lastMaterialPriceMap, itemId);
+  if (fromMap > 0) return fromMap;
+  return getCachedPrice(ui.city.value, "material", itemId);
+}
+
+function getPlanSellUnitPrice(itemId) {
+  const fromMap = getMapPriceByAliases(lastPriceMap, itemId);
+  if (fromMap > 0) return fromMap;
+  const source = getCalculatorPriceSourceForItem(itemId);
+  return getCachedPrice(ui.city.value, source, itemId);
+}
+
+function computePlanMaterials() {
+  const byId = new Map();
+  const rrr = getTotalReturnRate();
+
+  for (const [craftItemId, qtyRaw] of craftPlan.entries()) {
+    const quantity = Number(qtyRaw);
+    if (!Number.isFinite(quantity) || quantity <= 0) continue;
+
+    const recipe = recipeById.get(craftItemId);
+    if (!recipe) continue;
+
+    for (const ingredient of recipe.ingredients || []) {
+      const ingredientId = ingredient.itemId;
+      const baseAmount = Number(ingredient.amount || 0) * quantity;
+      if (!(baseAmount > 0)) continue;
+
+      const effectiveAmount = baseAmount * (1 - rrr);
+      let item = byId.get(ingredientId);
+      if (!item) {
+        item = {
+          itemId: ingredientId,
+          name:
+            priceCatalog.nameById.get(ingredientId) ||
+            prettyNameFromItemId(ingredientId),
+          requiredQty: 0,
+          buyQty: 0,
+          unitPrice: 0,
+          estCost: 0,
+        };
+        byId.set(ingredientId, item);
+      }
+      item.requiredQty += baseAmount;
+      item.buyQty += effectiveAmount;
+    }
+  }
+
+  for (const item of byId.values()) {
+    item.unitPrice = getPlanMaterialUnitPrice(item.itemId);
+    item.estCost = item.unitPrice > 0 ? item.buyQty * item.unitPrice : 0;
+  }
+
+  return [...byId.values()].sort((a, b) => b.estCost - a.estCost);
+}
+
+function computePlanEconomics(planEntries) {
+  const rrr = getTotalReturnRate();
+  const taxRate = Math.max(0, Number.parseFloat(ui.craftTax.value) || 0) / 100;
+
+  let totalSell = 0;
+  let totalCraftCost = 0;
+  let incompleteItems = 0;
+
+  for (const entry of planEntries) {
+    const recipe = recipeById.get(entry.itemId);
+    if (!recipe) continue;
+
+    let materialsCostPerUnit = 0;
+    let missingIngredients = 0;
+
+    for (const ingredient of recipe.ingredients || []) {
+      const unitPrice = getPlanMaterialUnitPrice(ingredient.itemId);
+      if (!(unitPrice > 0)) {
+        missingIngredients += 1;
+        continue;
+      }
+      const effectiveAmount = Number(ingredient.amount || 0) * (1 - rrr);
+      if (effectiveAmount > 0) {
+        materialsCostPerUnit += unitPrice * effectiveAmount;
+      }
+    }
+
+    const craftCostPerUnit = materialsCostPerUnit * (1 + taxRate);
+    const sellPricePerUnit = getPlanSellUnitPrice(entry.itemId);
+
+    if (missingIngredients > 0 || !(sellPricePerUnit > 0)) {
+      incompleteItems += 1;
+      continue;
+    }
+
+    totalCraftCost += craftCostPerUnit * entry.qty;
+    totalSell += sellPricePerUnit * entry.qty;
+  }
+
+  const profit = totalSell - totalCraftCost;
+  const margin = totalCraftCost > 0 ? profit / totalCraftCost : Number.NaN;
+
+  return {
+    totalSell,
+    totalCraftCost,
+    profit,
+    margin,
+    incompleteItems,
+  };
+}
+
+function renderCraftPlan() {
+  if (!ui.planRows || !ui.planMaterialRows || !ui.planTotals) return;
+
+  const planEntries = [...craftPlan.entries()]
+    .map(([itemId, qty]) => ({
+      itemId,
+      qty: Number(qty),
+      name: priceCatalog.nameById.get(itemId) || prettyNameFromItemId(itemId),
+    }))
+    .filter((entry) => Number.isFinite(entry.qty) && entry.qty > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  if (!planEntries.length) {
+    ui.planRows.innerHTML =
+      '<tr><td colspan="3" class="soft">No items selected yet.</td></tr>';
+    ui.planMaterialRows.innerHTML =
+      '<tr><td colspan="5" class="soft">Add items to build your buy list.</td></tr>';
+    ui.planTotals.textContent = "";
+    return;
+  }
+
+  ui.planRows.innerHTML = planEntries
+    .map(
+      (entry) => `
+        <tr data-plan-item-id="${escapeHtml(entry.itemId)}">
+          <td>${escapeHtml(entry.name)}</td>
+          <td>
+            <input
+              class="price-input"
+              type="number"
+              min="1"
+              step="1"
+              value="${String(Math.round(entry.qty))}"
+              data-role="plan-qty-input"
+            />
+          </td>
+          <td>
+            <span class="action-row">
+              <button class="action-btn" type="button" data-action="save-plan-qty">Save</button>
+              <button class="action-btn secondary" type="button" data-action="remove-plan-item">Remove</button>
+            </span>
+          </td>
+        </tr>
+      `
+    )
+    .join("");
+
+  const materials = computePlanMaterials();
+  if (!materials.length) {
+    ui.planMaterialRows.innerHTML =
+      '<tr><td colspan="5" class="soft">No materials derived from current plan.</td></tr>';
+    ui.planTotals.textContent = "";
+    return;
+  }
+
+  ui.planMaterialRows.innerHTML = materials
+    .map(
+      (mat) => `
+        <tr>
+          <td>${escapeHtml(mat.name)}</td>
+          <td class="num">${formatQty(mat.requiredQty)}</td>
+          <td class="num">${formatQty(mat.buyQty)}</td>
+          <td class="num">${mat.unitPrice > 0 ? formatSilver(mat.unitPrice) : "-"}</td>
+          <td class="num">${mat.estCost > 0 ? formatSilver(mat.estCost) : "-"}</td>
+        </tr>
+      `
+    )
+    .join("");
+
+  const totalEstimatedCost = materials.reduce((sum, mat) => sum + mat.estCost, 0);
+  const economics = computePlanEconomics(planEntries);
+  const marginText = Number.isFinite(economics.margin)
+    ? `${(economics.margin * 100).toFixed(1)}%`
+    : "-";
+  const incompleteText =
+    economics.incompleteItems > 0
+      ? ` | incomplete planned items: ${economics.incompleteItems}`
+      : "";
+  ui.planTotals.textContent =
+    `Material buy cost: ${formatSilver(totalEstimatedCost)} | Craft cost: ${formatSilver(economics.totalCraftCost)} | Sell value: ${formatSilver(economics.totalSell)} | Est. Profit: ${formatSilver(economics.profit)} | Margin: ${marginText}${incompleteText}`;
+}
+
+function getCalculatorPriceSourceForItem(itemId) {
+  if (priceCatalog.craftItemIdSet.has(itemId)) {
+    return ui.useBlackMarketSell.checked ? "black_market_sell_avg7" : "sell_avg";
+  }
+  return "material";
+}
+
+function getCalculatorPriceSourceLabel(source) {
+  if (source === "material") return "Material";
+  if (source === "sell_avg") return `City Sell Avg (${SELL_AVERAGE_DAYS}d)`;
+  if (source === "black_market_sell_avg7") {
+    return `Black Market Sell Avg (${BLACK_MARKET_SELL_AVERAGE_DAYS}d)`;
+  }
+  return source;
+}
+
+function renderIngredientDetailsRow(craftItemId) {
+  const recipe = recipeById.get(craftItemId);
+  if (!recipe) {
+    return `
+      <tr class="ingredient-detail-row">
+        <td colspan="11" class="soft">Recipe details unavailable.</td>
+      </tr>
+    `;
+  }
+
+  const city = ui.city.value;
+  const rrr = getTotalReturnRate();
+  const ingredientRows = (recipe.ingredients || [])
+    .map((ingredient) => {
+      const ingredientId = ingredient.itemId;
+      const source = "material";
+      const sourceLabel = getCalculatorPriceSourceLabel(source);
+      const name =
+        priceCatalog.nameById.get(ingredientId) || prettyNameFromItemId(ingredientId);
+      const baseAmount = Number(ingredient.amount || 0);
+      const effectiveAmount = Math.max(0, baseAmount * (1 - rrr));
+      const unitPrice =
+        getMapPriceByAliases(lastMaterialPriceMap, ingredientId) ||
+        getCachedPrice(city, source, ingredientId);
+      const totalCost = unitPrice > 0 ? unitPrice * effectiveAmount : 0;
+
+      return `
+        <tr data-ingredient-row="1" data-item-id="${escapeHtml(ingredientId)}" data-source="${escapeHtml(source)}">
+          <td>${escapeHtml(name)}</td>
+          <td class="num">${baseAmount.toFixed(baseAmount % 1 === 0 ? 0 : 2)}</td>
+          <td class="num">${effectiveAmount.toFixed(2)}</td>
+          <td>${escapeHtml(sourceLabel)}</td>
+          <td class="num">${unitPrice > 0 ? formatSilver(unitPrice) : "-"}</td>
+          <td class="num">${totalCost > 0 ? formatSilver(totalCost) : "-"}</td>
+          <td>
+            <input
+              class="price-input ingredient-price-input"
+              type="number"
+              min="0"
+              step="1"
+              value="${unitPrice > 0 ? String(Math.round(unitPrice)) : ""}"
+              data-role="ingredient-price-input"
+            />
+          </td>
+          <td>
+            <span class="action-row">
+              <button class="action-btn" type="button" data-action="save-ingredient-price">Save</button>
+              <button class="action-btn secondary" type="button" data-action="clear-ingredient-price">Clear</button>
+            </span>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  return `
+    <tr class="ingredient-detail-row">
+      <td colspan="11">
+        <div class="ingredient-detail">
+          <div class="ingredient-detail-title">Ingredients</div>
+          <div class="ingredient-table-wrap">
+            <table class="ingredient-table">
+              <thead>
+                <tr>
+                  <th>Ingredient</th>
+                  <th>Base Qty</th>
+                  <th>Eff. Qty</th>
+                  <th>Price Source</th>
+                  <th>Unit Price</th>
+                  <th>Total Cost</th>
+                  <th>Edit Price</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>${ingredientRows || '<tr><td colspan="8" class="soft">No ingredients.</td></tr>'}</tbody>
+            </table>
+          </div>
+        </div>
+      </td>
+    </tr>
+  `;
 }
 
 function setActiveTab(tab) {
@@ -745,6 +1098,105 @@ function handlePriceAction(button) {
   }
 }
 
+function handleCalculatorAction(button) {
+  const action = button.getAttribute("data-action");
+  if (!action) return;
+
+  if (action === "add-plan-item") {
+    const itemId = button.getAttribute("data-item-id");
+    if (!itemId) return;
+
+    const current = Number(craftPlan.get(itemId) || 0);
+    craftPlan.set(itemId, Math.round(current + 1));
+    renderCraftPlan();
+    const name = priceCatalog.nameById.get(itemId) || prettyNameFromItemId(itemId);
+    setStatus(
+      current > 0
+        ? `Added 1x ${name} to craft plan (now ${Math.round(current + 1)}).`
+        : `Added 1x ${name} to craft plan.`
+    );
+    return;
+  }
+
+  if (action === "toggle-ingredients") {
+    const itemId = button.getAttribute("data-item-id");
+    if (!itemId) return;
+    if (expandedCraftRows.has(itemId)) {
+      expandedCraftRows.delete(itemId);
+    } else {
+      expandedCraftRows.add(itemId);
+    }
+    renderRows(lastComputedRows);
+    return;
+  }
+
+  if (action === "save-ingredient-price" || action === "clear-ingredient-price") {
+    const row = button.closest('tr[data-ingredient-row="1"]');
+    if (!row) return;
+
+    const itemId = row.getAttribute("data-item-id");
+    const source = row.getAttribute("data-source");
+    if (!itemId || !source) return;
+
+    if (action === "clear-ingredient-price") {
+      setCachedPrice(ui.city.value, source, itemId, 0);
+      applyCurrentCacheAndRender();
+      setStatus(`Cleared ingredient price for ${itemId}.`);
+      return;
+    }
+
+    const input = row.querySelector('input[data-role="ingredient-price-input"]');
+    const value = Number(input?.value);
+    if (!Number.isFinite(value) || value <= 0) {
+      setStatus("Ingredient price must be a positive number.");
+      return;
+    }
+
+    setCachedPrice(ui.city.value, source, itemId, Math.round(value));
+    applyCurrentCacheAndRender();
+    setStatus(`Saved ingredient price for ${itemId}.`);
+  }
+}
+
+function handlePlanAction(button) {
+  const action = button.getAttribute("data-action");
+  if (!action) return;
+
+  if (action === "clear-plan") {
+    clearCraftPlan();
+    return;
+  }
+
+  const row = button.closest("tr[data-plan-item-id]");
+  const itemId = row?.getAttribute("data-plan-item-id");
+  if (!itemId) return;
+
+  if (action === "remove-plan-item") {
+    craftPlan.delete(itemId);
+    renderCraftPlan();
+    setStatus("Removed item from craft plan.");
+    return;
+  }
+
+  if (action === "save-plan-qty") {
+    const input = row.querySelector('input[data-role="plan-qty-input"]');
+    const qty = Number(input?.value);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setStatus("Plan quantity must be a positive number.");
+      return;
+    }
+    craftPlan.set(itemId, Math.round(qty));
+    renderCraftPlan();
+    setStatus("Updated plan quantity.");
+  }
+}
+
+function clearCraftPlan() {
+  craftPlan.clear();
+  renderCraftPlan();
+  setStatus("Craft plan cleared.");
+}
+
 async function loadRecipes() {
   setStatus("Loading recipes from local backend...");
 
@@ -770,6 +1222,11 @@ async function loadRecipes() {
 
   populateCategoryFilter(recipes);
   buildPriceCatalog(recipes);
+  recipeById.clear();
+  for (const recipe of recipes) {
+    recipeById.set(recipe.itemId, recipe);
+  }
+  expandedCraftRows.clear();
 
   const generatedAt = payload.generatedAt || "unknown time";
   setStatus(
@@ -846,20 +1303,21 @@ function getActiveSellVolumeMap() {
     : lastCitySellVolumeMap;
 }
 
-function calculateRows(recipes, priceMap) {
+function calculateRows(recipes, outputPriceMap, materialPriceMap) {
   const rrr = getTotalReturnRate();
   const taxRate = Math.max(0, Number.parseFloat(ui.craftTax.value) || 0) / 100;
+  const materialMap = materialPriceMap || outputPriceMap;
 
   const rows = [];
   for (const recipe of recipes) {
-    const itemPrice = priceMap.get(recipe.itemId) || 0;
+    const itemPrice = getMapPriceByAliases(outputPriceMap, recipe.itemId);
     if (itemPrice <= 0) continue;
 
     let materialsCost = 0;
     let missingCount = 0;
 
     for (const ingredient of recipe.ingredients || []) {
-      const ingredientPrice = priceMap.get(ingredient.itemId) || 0;
+      const ingredientPrice = getMapPriceByAliases(materialMap, ingredient.itemId);
       if (ingredientPrice <= 0) {
         missingCount += 1;
         continue;
@@ -911,7 +1369,7 @@ function calculateRows(recipes, priceMap) {
 function renderRows(rows) {
   if (!lastPriceMap) {
     ui.rows.innerHTML =
-      '<tr><td colspan="10" class="soft">No prices loaded yet. Click Fetch Prices.</td></tr>';
+      '<tr><td colspan="11" class="soft">No prices loaded yet. Click Fetch Prices.</td></tr>';
     return;
   }
 
@@ -926,10 +1384,23 @@ function renderRows(rows) {
       const profitable = row.isComplete && row.margin >= threshold;
       const marginPct = row.isComplete ? row.margin * 100 : Number.NaN;
       const profitClass = row.isComplete && row.profit >= 0 ? "pos" : "neg";
+      const isExpanded = expandedCraftRows.has(row.itemId);
+      const toggleSymbol = isExpanded ? "▾" : "▸";
 
       return `
         <tr class="${profitable ? "profitable" : ""}">
-          <td data-label="Item"><span class="item-name">${escapeHtml(row.name)}</span></td>
+          <td data-label="Item">
+            <button
+              type="button"
+              class="item-toggle-btn"
+              data-action="toggle-ingredients"
+              data-item-id="${escapeHtml(row.itemId)}"
+              aria-expanded="${isExpanded ? "true" : "false"}"
+            >
+              <span class="toggle-symbol">${toggleSymbol}</span>
+              <span class="item-name">${escapeHtml(row.name)}</span>
+            </button>
+          </td>
           <td data-label="Tier" class="num">${row.tier ? `T${row.tier}` : "-"}</td>
           <td data-label="Category">${escapeHtml(row.category || "Other")}</td>
           <td data-label="Enchant" class="num">.${Number(row.enchantment || 0)}</td>
@@ -939,19 +1410,34 @@ function renderRows(rows) {
           <td data-label="Profit" class="num ${profitClass}">${row.isComplete ? formatSilver(row.profit) : "-"}</td>
           <td data-label="Margin" class="num ${profitClass}">${row.isComplete ? `${marginPct.toFixed(1)}%` : "-"}</td>
           <td data-label="Missing Prices" class="num soft">${row.missingCount}</td>
+          <td data-label="Plan">
+            <span class="plan-inline">
+              <button
+                type="button"
+                class="action-btn"
+                data-action="add-plan-item"
+                data-item-id="${escapeHtml(row.itemId)}"
+              >
+                Add
+              </button>
+            </span>
+          </td>
         </tr>
+        ${isExpanded ? renderIngredientDetailsRow(row.itemId) : ""}
       `;
     })
     .join("");
 
   ui.rows.innerHTML =
-    out || '<tr><td colspan="10">No items match current filters.</td></tr>';
+    out || '<tr><td colspan="11">No items match current filters.</td></tr>';
 }
 
 function recomputeAndRender() {
-  if (!recipeData.length || !lastPriceMap) return;
-  lastComputedRows = calculateRows(recipeData, lastPriceMap);
-  renderRows(lastComputedRows);
+  if (recipeData.length && lastPriceMap) {
+    lastComputedRows = calculateRows(recipeData, lastPriceMap, lastMaterialPriceMap);
+    renderRows(lastComputedRows);
+  }
+  renderCraftPlan();
 }
 
 function rebuildScopedMapsFromCache(scope) {
@@ -1241,6 +1727,7 @@ ui.city.addEventListener("change", async () => {
   lastComputedRows = [];
   renderRows(lastComputedRows);
   renderPriceEditor();
+  renderCraftPlan();
   setStatus(`City changed to ${ui.city.value}. Click Fetch Prices to load data.`);
 });
 ui.useBlackMarketSell.addEventListener("change", async () => {
@@ -1296,6 +1783,22 @@ ui.tabPrices.addEventListener("click", () => {
 ui.refreshPricesBtn.addEventListener("click", () => refresh({ forceApi: false }));
 ui.forceRefreshPricesBtn?.addEventListener("click", () => refresh({ forceApi: true }));
 
+ui.rows.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  handleCalculatorAction(button);
+});
+
+ui.planRows?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  handlePlanAction(button);
+});
+
+ui.clearPlanBtn?.addEventListener("click", () => {
+  clearCraftPlan();
+});
+
 ui.panelPrices.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
@@ -1323,6 +1826,7 @@ loadRecipes()
     recipeData = recipes;
     renderRows(lastComputedRows);
     renderPriceEditor();
+    renderCraftPlan();
     setStatus(
       `Loaded ${recipeData.length.toLocaleString()} recipes. Set filters and click Fetch Prices.`
     );

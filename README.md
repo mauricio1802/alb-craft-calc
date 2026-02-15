@@ -13,6 +13,9 @@ Local web interface to estimate crafting profitability per city in Albion Online
 - Supports filtering by search text, Tier, Category, and Enchantment.
 - Optional checkbox to use Black Market price for crafted output items.
 - Shows estimated sell volume per day for crafted items (30-day weighted average).
+- Clicking an item name in Calculator expands ingredient breakdown (quantities, source, unit price, total cost).
+- Ingredient prices can be edited inline from the expanded breakdown.
+- Calculator includes a Craft Plan: add items with quantities and see aggregated materials to buy.
 - Includes a `Price Editor` tab with common materials, artifacts, and crafted items.
 - `Price Editor` supports filters by search text, Tier, Category, and Enchantment.
 - `Price Editor` sections are collapsible/expandable.
@@ -38,7 +41,7 @@ Then open:
 ## Notes
 
 - Recipe source: item/crafting dumps (`ao-data` / `broderickhyman`) parsed by local backend.
-- Optional manual sources: `/Users/mauricio/PersonalProgramming/albion-craft-calc/data/recipes.json`, `/Users/mauricio/PersonalProgramming/albion-craft-calc/data/items.json`, `/Users/mauricio/PersonalProgramming/albion-craft-calc/data/craftingrequirements.json`, `/Users/mauricio/PersonalProgramming/albion-craft-calc/data/items.xml`.
+- Optional manual sources: `data/recipes.json`, `data/items.json`, `data/craftingrequirements.json`, `data/items.xml`.
 - Price source: Albion Online Data API (`/api/v2/stats/prices` + `/api/v2/stats/history`) via local backend proxy (`/api/prices`).
 - Quality is fixed to `Normal` (`1`) for all feed lookups.
 - Material cost uses current city `sell_price_min` (fallback `buy_price_max`).
@@ -48,7 +51,7 @@ Then open:
 - Crafting tax is modeled as a flat % over effective material cost.
 - Resource return is modeled as the sum of enabled bonus percentages (capped at `95%`).
 - First startup loads/parses recipe sources and caches the result.
-- Cache file: `/Users/mauricio/PersonalProgramming/albion-craft-calc/data/recipes-cache.json`.
+- Cache file: `data/recipes-cache.json`.
 - Recipes are reused from cache on next runs (unless cache file is deleted or force-refresh is requested).
 
 ## Do I need to feed data manually?

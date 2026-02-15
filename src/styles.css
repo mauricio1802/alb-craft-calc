@@ -169,6 +169,30 @@ button:hover {
   font-weight: 600;
 }
 
+.item-toggle-btn {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.item-toggle-btn:hover {
+  filter: none;
+  color: #704d20;
+}
+
+.toggle-symbol {
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  width: 0.8rem;
+}
+
 .soft {
   color: var(--ink-soft);
 }
@@ -235,6 +259,12 @@ button:hover {
   gap: 0.35rem;
 }
 
+.plan-inline {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+
 .action-btn {
   margin-top: 0;
   padding: 0.35rem 0.5rem;
@@ -254,6 +284,80 @@ button:hover {
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 10px;
+}
+
+.craft-plan {
+  margin-top: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.7rem;
+  background: #fffdf7;
+}
+
+.craft-plan h3 {
+  margin: 0.2rem 0 0.45rem;
+}
+
+.craft-plan table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.craft-plan thead th {
+  position: static;
+}
+
+.craft-plan td,
+.craft-plan th {
+  vertical-align: middle;
+}
+
+.craft-plan td:nth-child(n + 2),
+.craft-plan th:nth-child(n + 2) {
+  text-align: right;
+}
+
+.ingredient-detail-row td {
+  background: #fff5e4;
+  padding: 0.45rem 0.55rem;
+}
+
+.ingredient-detail {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.ingredient-detail-title {
+  font-weight: 700;
+  color: #705126;
+}
+
+.ingredient-table-wrap {
+  overflow: auto;
+  border: 1px solid #dfc89f;
+  border-radius: 8px;
+  background: #fffdfa;
+}
+
+.ingredient-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.ingredient-table th {
+  padding: 0.45rem 0.5rem;
+  background: #f8ecd7;
+  border-bottom: 1px solid #dfc89f;
+}
+
+.ingredient-table td {
+  padding: 0.4rem 0.5rem;
+}
+
+.ingredient-price-input {
+  width: 94px;
 }
 
 table {
@@ -431,6 +535,11 @@ tbody tr.profitable {
     font-size: 1rem;
   }
 
+  #panelCalculator .table-wide tbody td[data-label="Plan"] .plan-inline {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   #panelCalculator .table-wide tbody td[colspan] {
     display: block;
     text-align: left;
@@ -440,5 +549,27 @@ tbody tr.profitable {
 
   #panelCalculator .table-wide tbody td[colspan]::before {
     display: none;
+  }
+
+  #panelCalculator .table-wide tbody tr.ingredient-detail-row {
+    border: 0;
+    background: transparent;
+    padding: 0;
+  }
+
+  #panelCalculator .table-wide tbody tr.ingredient-detail-row td {
+    display: block;
+    padding: 0.2rem 0;
+    border-bottom: 0;
+    background: transparent;
+  }
+
+  #panelCalculator .table-wide tbody tr.ingredient-detail-row td::before {
+    display: none;
+  }
+
+  .ingredient-table th,
+  .ingredient-table td {
+    font-size: 0.8rem;
   }
 }
