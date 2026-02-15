@@ -11,7 +11,7 @@ const PORT = Number(process.env.PORT || 5173);
 
 const CACHE_FILE = path.join(ROOT, "data", "recipes-cache.json");
 const CACHE_FILE_TMP = path.join(ROOT, "data", "recipes-cache.tmp.json");
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 
 const MARKET_PRICE_API = "https://www.albion-online-data.com/api/v2/stats/prices";
 const MARKET_HISTORY_API = "https://www.albion-online-data.com/api/v2/stats/history";
@@ -452,11 +452,30 @@ function findIngredientOptions(node, depth = 0, parentKey = "") {
   return out;
 }
 
-function normalizeOption(itemId, option) {
+function normalizeOption(itemId, option, knownItemIds = null) {
+  function applyIngredientEnchantment(rawId, enchantmentLevel) {
+    const id = typeof rawId === "string" ? rawId.trim() : "";
+    const level = Number(enchantmentLevel);
+    if (!id) return id;
+    if (!Number.isFinite(level) || level <= 0) return id;
+    if (id.includes("@") || /_LEVEL\d+$/i.test(id)) return id;
+
+    const atId = `${id}@${level}`;
+    const levelId = `${id}_LEVEL${level}`;
+
+    if (knownItemIds instanceof Set) {
+      if (knownItemIds.has(atId)) return atId;
+      if (knownItemIds.has(levelId)) return levelId;
+    }
+    return atId;
+  }
+
   const folded = new Map();
   for (const ingredient of option) {
-    const ingId = typeof ingredient?.itemId === "string" ? ingredient.itemId : null;
+    const ingIdRaw = typeof ingredient?.itemId === "string" ? ingredient.itemId : null;
     const amount = Number(ingredient?.amount);
+    const enchantmentLevel = Number(ingredient?.enchantmentLevel);
+    const ingId = applyIngredientEnchantment(ingIdRaw, enchantmentLevel);
     if (!ingId || !Number.isFinite(amount) || amount <= 0) continue;
     if (ingId === itemId || ingId.startsWith("@")) continue;
     folded.set(ingId, (folded.get(ingId) || 0) + amount);
@@ -559,6 +578,7 @@ function parseRecipesFromXml(xmlText, itemNames = new Map()) {
 
   const tagRegex = /<\s*(\/?)\s*([a-zA-Z0-9_:-]+)\b([^>]*)>/g;
   const recipes = [];
+  const knownItemIds = itemNames instanceof Map ? new Set(itemNames.keys()) : null;
   const itemStack = [];
   const reqStack = [];
   const enchantmentStack = [];
@@ -616,7 +636,7 @@ function parseRecipesFromXml(xmlText, itemNames = new Map()) {
         Number.isFinite(option?.enchantment) && option.enchantment >= 0
           ? option.enchantment
           : ctx.baseEnchantment;
-      const normalized = normalizeOption(ctx.itemId, option.resources);
+      const normalized = normalizeOption(ctx.itemId, option.resources, knownItemIds);
       if (!normalized.length) continue;
 
       const existing = byEnchantment.get(enchantment);
