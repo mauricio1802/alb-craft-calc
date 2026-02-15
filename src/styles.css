@@ -155,6 +155,31 @@ button:hover {
   border-color: #90622b;
 }
 
+.th-sort {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.th-sort.active {
+  color: #6f4e24;
+}
+
+.sort-indicator {
+  display: inline-block;
+  width: 0.75rem;
+  font-size: 0.7rem;
+  color: #7f6d53;
+}
+
 .results-head h2 {
   margin: 0;
 }
@@ -278,6 +303,13 @@ button:hover {
   border-color: var(--line);
 }
 
+.plus-btn {
+  min-width: 28px;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
 .table-wrap {
   margin-top: 0.8rem;
   max-height: 70vh;
@@ -367,8 +399,8 @@ table {
 }
 
 .table-wide {
-  width: max-content;
-  min-width: 1220px;
+  width: 100%;
+  min-width: 980px;
 }
 
 thead th {

@@ -26,6 +26,7 @@ const ui = {
   tabPrices: document.getElementById("tabPrices"),
   panelCalculator: document.getElementById("panelCalculator"),
   panelPrices: document.getElementById("panelPrices"),
+  calculatorHead: document.querySelector("#panelCalculator thead"),
 
   rows: document.getElementById("rows"),
   search: document.getElementById("search"),
@@ -70,6 +71,10 @@ const priceCatalog = {
 const recipeById = new Map();
 const expandedCraftRows = new Set();
 const craftPlan = new Map();
+const sortState = {
+  key: "margin",
+  direction: "desc",
+};
 
 function setStatus(text) {
   ui.status.textContent = text;
@@ -908,7 +913,7 @@ function renderIngredientDetailsRow(craftItemId) {
   if (!recipe) {
     return `
       <tr class="ingredient-detail-row">
-        <td colspan="11" class="soft">Recipe details unavailable.</td>
+        <td colspan="8" class="soft">Recipe details unavailable.</td>
       </tr>
     `;
   }
@@ -960,7 +965,7 @@ function renderIngredientDetailsRow(craftItemId) {
 
   return `
     <tr class="ingredient-detail-row">
-      <td colspan="11">
+      <td colspan="8">
         <div class="ingredient-detail">
           <div class="ingredient-detail-title">Ingredients</div>
           <div class="ingredient-table-wrap">
@@ -1341,6 +1346,9 @@ function calculateRows(recipes, outputPriceMap, materialPriceMap) {
       tier: recipe.tier,
       category: recipe.category,
       enchantment: recipe.enchantment,
+      typeText: `${recipe.tier || "-"}.${
+        Number.isFinite(recipe.enchantment) ? recipe.enchantment : 0
+      } ${recipe.category || "Other"}`,
       sellPrice: itemPrice,
       sellVolume: Number(getActiveSellVolumeMap()?.get(recipe.itemId) || 0),
       craftCost,
@@ -1366,10 +1374,85 @@ function calculateRows(recipes, outputPriceMap, materialPriceMap) {
   return rows;
 }
 
+function updateSortIndicators() {
+  const buttons = ui.calculatorHead?.querySelectorAll("button[data-sort-key]") || [];
+  for (const button of buttons) {
+    const key = button.getAttribute("data-sort-key");
+    const indicator = button.querySelector(".sort-indicator");
+    if (!key || !indicator) continue;
+    if (key === sortState.key) {
+      indicator.textContent = sortState.direction === "asc" ? "▲" : "▼";
+      button.classList.add("active");
+    } else {
+      indicator.textContent = "";
+      button.classList.remove("active");
+    }
+  }
+}
+
+function toSortableNumber(value) {
+  return Number.isFinite(value) ? value : Number.NEGATIVE_INFINITY;
+}
+
+function compareRowsBySort(a, b) {
+  const dir = sortState.direction === "asc" ? 1 : -1;
+  const key = sortState.key;
+
+  if (key === "name") {
+    return a.name.localeCompare(b.name) * dir;
+  }
+  if (key === "type") {
+    const tierCmp = (Number(a.tier || 0) - Number(b.tier || 0)) * dir;
+    if (tierCmp !== 0) return tierCmp;
+    const enchCmp =
+      (Number(a.enchantment || 0) - Number(b.enchantment || 0)) * dir;
+    if (enchCmp !== 0) return enchCmp;
+    return String(a.category || "").localeCompare(String(b.category || "")) * dir;
+  }
+
+  const numA =
+    key === "sellPrice"
+      ? toSortableNumber(a.sellPrice)
+      : key === "sellVolume"
+        ? toSortableNumber(a.sellVolume)
+        : key === "craftCost"
+          ? toSortableNumber(a.craftCost)
+          : key === "profit"
+            ? toSortableNumber(a.profit)
+            : toSortableNumber(a.margin);
+  const numB =
+    key === "sellPrice"
+      ? toSortableNumber(b.sellPrice)
+      : key === "sellVolume"
+        ? toSortableNumber(b.sellVolume)
+        : key === "craftCost"
+          ? toSortableNumber(b.craftCost)
+          : key === "profit"
+            ? toSortableNumber(b.profit)
+            : toSortableNumber(b.margin);
+
+  if (numA === numB) {
+    return a.name.localeCompare(b.name);
+  }
+  return (numA - numB) * dir;
+}
+
+function setSortKey(key) {
+  if (!key) return;
+  if (sortState.key === key) {
+    sortState.direction = sortState.direction === "asc" ? "desc" : "asc";
+  } else {
+    sortState.key = key;
+    sortState.direction = key === "name" || key === "type" ? "asc" : "desc";
+  }
+  updateSortIndicators();
+  renderRows(lastComputedRows);
+}
+
 function renderRows(rows) {
   if (!lastPriceMap) {
     ui.rows.innerHTML =
-      '<tr><td colspan="11" class="soft">No prices loaded yet. Click Fetch Prices.</td></tr>';
+      '<tr><td colspan="8" class="soft">No prices loaded yet. Click Fetch Prices.</td></tr>';
     return;
   }
 
@@ -1378,8 +1461,11 @@ function renderRows(rows) {
   const threshold =
     Math.max(0, Number.parseFloat(ui.marginThreshold.value) || 0) / 100;
 
-  const out = rows
+  const visibleRows = rows
     .filter((row) => matchesCalculatorFilters(row, filters))
+    .sort(compareRowsBySort);
+
+  const out = visibleRows
     .map((row) => {
       const profitable = row.isComplete && row.margin >= threshold;
       const marginPct = row.isComplete ? row.margin * 100 : Number.NaN;
@@ -1401,24 +1487,22 @@ function renderRows(rows) {
               <span class="item-name">${escapeHtml(row.name)}</span>
             </button>
           </td>
-          <td data-label="Tier" class="num">${row.tier ? `T${row.tier}` : "-"}</td>
-          <td data-label="Category">${escapeHtml(row.category || "Other")}</td>
-          <td data-label="Enchant" class="num">.${Number(row.enchantment || 0)}</td>
+          <td data-label="Tier / Category">${escapeHtml(row.typeText)}</td>
           <td data-label="Sell Price" class="num">${formatSilver(row.sellPrice)}</td>
           <td data-label="Est. Sell/Day (30d)" class="num">${row.sellVolume > 0 ? formatSilver(row.sellVolume) : "-"}</td>
           <td data-label="Craft Cost" class="num">${row.isComplete ? formatSilver(row.craftCost) : "-"}</td>
           <td data-label="Profit" class="num ${profitClass}">${row.isComplete ? formatSilver(row.profit) : "-"}</td>
           <td data-label="Margin" class="num ${profitClass}">${row.isComplete ? `${marginPct.toFixed(1)}%` : "-"}</td>
-          <td data-label="Missing Prices" class="num soft">${row.missingCount}</td>
           <td data-label="Plan">
             <span class="plan-inline">
               <button
                 type="button"
-                class="action-btn"
+                class="action-btn plus-btn"
                 data-action="add-plan-item"
                 data-item-id="${escapeHtml(row.itemId)}"
+                aria-label="Add to craft plan"
               >
-                Add
+                +
               </button>
             </span>
           </td>
@@ -1429,7 +1513,7 @@ function renderRows(rows) {
     .join("");
 
   ui.rows.innerHTML =
-    out || '<tr><td colspan="11">No items match current filters.</td></tr>';
+    out || '<tr><td colspan="8">No items match current filters.</td></tr>';
 }
 
 function recomputeAndRender() {
@@ -1783,6 +1867,13 @@ ui.tabPrices.addEventListener("click", () => {
 ui.refreshPricesBtn.addEventListener("click", () => refresh({ forceApi: false }));
 ui.forceRefreshPricesBtn?.addEventListener("click", () => refresh({ forceApi: true }));
 
+ui.calculatorHead?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-sort-key]");
+  if (!button) return;
+  const key = button.getAttribute("data-sort-key");
+  setSortKey(key);
+});
+
 ui.rows.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
@@ -1821,6 +1912,7 @@ ui.panelPrices.addEventListener("click", (event) => {
 });
 
 setActiveTab("calculator");
+updateSortIndicators();
 loadRecipes()
   .then((recipes) => {
     recipeData = recipes;
