@@ -11,7 +11,7 @@ const PORT = Number(process.env.PORT || 5173);
 
 const CACHE_FILE = path.join(ROOT, "data", "recipes-cache.json");
 const CACHE_FILE_TMP = path.join(ROOT, "data", "recipes-cache.tmp.json");
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
 
 const MARKET_PRICE_API = "https://www.albion-online-data.com/api/v2/stats/prices";
 const MARKET_HISTORY_API = "https://www.albion-online-data.com/api/v2/stats/history";
@@ -358,6 +358,7 @@ function parseResourceObjects(node) {
   const out = [];
 
   function parseOptionalMaxReturn(raw) {
+    if (raw === null || raw === undefined || raw === "") return null;
     const value = Number(raw);
     return Number.isFinite(value) && value >= 0 ? value : null;
   }
@@ -471,6 +472,7 @@ function findIngredientOptions(node, depth = 0, parentKey = "") {
 
 function normalizeOption(itemId, option, knownItemIds = null) {
   function parseOptionalMaxReturn(raw) {
+    if (raw === null || raw === undefined || raw === "") return null;
     const value = Number(raw);
     return Number.isFinite(value) && value >= 0 ? value : null;
   }
@@ -828,9 +830,18 @@ function validateManualRecipes(raw) {
           .map((i) => ({
             itemId: typeof i?.itemId === "string" ? i.itemId : null,
             amount: Number(i?.amount),
-            maxReturnAmount: Number.isFinite(Number(i?.maxReturnAmount))
+            maxReturnAmount:
+              i?.maxReturnAmount === null ||
+              i?.maxReturnAmount === undefined ||
+              i?.maxReturnAmount === ""
+                ? null
+                : Number.isFinite(Number(i?.maxReturnAmount))
               ? Number(i.maxReturnAmount)
-              : Number.isFinite(Number(i?.maxreturnamount))
+              : i?.maxreturnamount === null ||
+                  i?.maxreturnamount === undefined ||
+                  i?.maxreturnamount === ""
+                ? null
+                : Number.isFinite(Number(i?.maxreturnamount))
                 ? Number(i.maxreturnamount)
                 : null,
           }))
