@@ -306,6 +306,33 @@ function getTotalReturnRate() {
   return Math.max(0, Math.min(0.95, total));
 }
 
+function parseOptionalMaxReturnAmount(raw) {
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function getIngredientEffectiveAmount(ingredient, quantity = 1, returnRate = 0) {
+  const crafts = Number(quantity);
+  const amountPerCraft = Number(ingredient?.amount || 0);
+  const baseAmount =
+    Number.isFinite(crafts) && crafts > 0 && Number.isFinite(amountPerCraft)
+      ? amountPerCraft * crafts
+      : 0;
+  if (!(baseAmount > 0)) return 0;
+
+  const boundedRate = Number.isFinite(returnRate)
+    ? Math.max(0, Math.min(0.95, returnRate))
+    : 0;
+  let returnedAmount = baseAmount * boundedRate;
+
+  const maxReturnPerCraft = parseOptionalMaxReturnAmount(ingredient?.maxReturnAmount);
+  if (maxReturnPerCraft !== null) {
+    returnedAmount = Math.min(returnedAmount, maxReturnPerCraft * crafts);
+  }
+
+  return Math.max(0, baseAmount - returnedAmount);
+}
+
 function formatSilver(value) {
   if (!Number.isFinite(value)) return "-";
   return Math.round(value).toLocaleString();
@@ -458,6 +485,9 @@ function normalizeRecipes(rawRecipes) {
                 ? ingredient.itemId.trim()
                 : "",
             amount: Number(ingredient?.amount),
+            maxReturnAmount: parseOptionalMaxReturnAmount(
+              ingredient?.maxReturnAmount ?? ingredient?.maxreturnamount
+            ),
           }))
           .filter(
             (ingredient) =>
@@ -731,7 +761,7 @@ function computePlanMaterials() {
       const baseAmount = Number(ingredient.amount || 0) * quantity;
       if (!(baseAmount > 0)) continue;
 
-      const effectiveAmount = baseAmount * (1 - rrr);
+      const effectiveAmount = getIngredientEffectiveAmount(ingredient, quantity, rrr);
       let item = byId.get(ingredientId);
       if (!item) {
         item = {
@@ -780,7 +810,7 @@ function computePlanEconomics(planEntries) {
         missingIngredients += 1;
         continue;
       }
-      const effectiveAmount = Number(ingredient.amount || 0) * (1 - rrr);
+      const effectiveAmount = getIngredientEffectiveAmount(ingredient, 1, rrr);
       if (effectiveAmount > 0) {
         materialsCostPerUnit += unitPrice * effectiveAmount;
       }
@@ -928,7 +958,7 @@ function renderIngredientDetailsRow(craftItemId) {
       const name =
         priceCatalog.nameById.get(ingredientId) || prettyNameFromItemId(ingredientId);
       const baseAmount = Number(ingredient.amount || 0);
-      const effectiveAmount = Math.max(0, baseAmount * (1 - rrr));
+      const effectiveAmount = getIngredientEffectiveAmount(ingredient, 1, rrr);
       const unitPrice =
         getMapPriceByAliases(lastMaterialPriceMap, ingredientId) ||
         getCachedPrice(city, source, ingredientId);
@@ -1328,7 +1358,7 @@ function calculateRows(recipes, outputPriceMap, materialPriceMap) {
         continue;
       }
 
-      const effectiveAmount = Number(ingredient.amount || 0) * (1 - rrr);
+      const effectiveAmount = getIngredientEffectiveAmount(ingredient, 1, rrr);
       if (effectiveAmount > 0) {
         materialsCost += ingredientPrice * effectiveAmount;
       }

@@ -11,7 +11,7 @@ const PORT = Number(process.env.PORT || 5173);
 
 const CACHE_FILE = path.join(ROOT, "data", "recipes-cache.json");
 const CACHE_FILE_TMP = path.join(ROOT, "data", "recipes-cache.tmp.json");
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 4;
 
 const MARKET_PRICE_API = "https://www.albion-online-data.com/api/v2/stats/prices";
 const MARKET_HISTORY_API = "https://www.albion-online-data.com/api/v2/stats/history";
@@ -357,6 +357,11 @@ function parseResourceObjects(node) {
 
   const out = [];
 
+  function parseOptionalMaxReturn(raw) {
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  }
+
   // XML-like: @uniquename, @count, @uniquename1, @count1, ...
   for (const [key, value] of Object.entries(node)) {
     const match = key.match(/^@?(?:uniquename|itemtype|itemid|item|identifier)(\d*)$/i);
@@ -374,9 +379,15 @@ function parseResourceObjects(node) {
       `@value${suffix}`,
       `value${suffix}`,
     ]);
+    const maxReturnAmount = parseOptionalMaxReturn(
+      node[`@maxreturnamount${suffix}`] ??
+        node[`maxreturnamount${suffix}`] ??
+        node["@maxreturnamount"] ??
+        node.maxreturnamount
+    );
 
     if (itemId && amount) {
-      out.push({ itemId, amount });
+      out.push({ itemId, amount, maxReturnAmount });
     }
   }
 
@@ -406,9 +417,15 @@ function parseResourceObjects(node) {
     "@amount",
     "@value",
   ]);
+  const maxReturnAmount = parseOptionalMaxReturn(
+    node.maxReturnAmount ??
+      node.maxreturnamount ??
+      node["@maxreturnamount"] ??
+      node["@maxReturnAmount"]
+  );
 
   if (itemId && amount) {
-    return [{ itemId, amount }];
+    return [{ itemId, amount, maxReturnAmount }];
   }
 
   return [];
@@ -453,6 +470,11 @@ function findIngredientOptions(node, depth = 0, parentKey = "") {
 }
 
 function normalizeOption(itemId, option, knownItemIds = null) {
+  function parseOptionalMaxReturn(raw) {
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  }
+
   function applyIngredientEnchantment(rawId, enchantmentLevel) {
     const id = typeof rawId === "string" ? rawId.trim() : "";
     const level = Number(enchantmentLevel);
@@ -475,13 +497,33 @@ function normalizeOption(itemId, option, knownItemIds = null) {
     const ingIdRaw = typeof ingredient?.itemId === "string" ? ingredient.itemId : null;
     const amount = Number(ingredient?.amount);
     const enchantmentLevel = Number(ingredient?.enchantmentLevel);
+    const maxReturnAmount = parseOptionalMaxReturn(
+      ingredient?.maxReturnAmount ?? ingredient?.maxreturnamount
+    );
     const ingId = applyIngredientEnchantment(ingIdRaw, enchantmentLevel);
     if (!ingId || !Number.isFinite(amount) || amount <= 0) continue;
     if (ingId === itemId || ingId.startsWith("@")) continue;
-    folded.set(ingId, (folded.get(ingId) || 0) + amount);
+
+    const foldKey = `${ingId}::${maxReturnAmount === null ? "*" : maxReturnAmount}`;
+    const existing = folded.get(foldKey);
+    if (existing) {
+      existing.amount += amount;
+    } else {
+      folded.set(foldKey, {
+        itemId: ingId,
+        amount,
+        maxReturnAmount,
+      });
+    }
   }
 
-  return [...folded.entries()].map(([ingId, amount]) => ({ itemId: ingId, amount }));
+  return [...folded.values()]
+    .map((entry) => ({
+      itemId: entry.itemId,
+      amount: entry.amount,
+      maxReturnAmount: entry.maxReturnAmount,
+    }))
+    .filter((entry) => Number.isFinite(entry.amount) && entry.amount > 0);
 }
 
 function extractRecipesFromEntries(entries, itemNames = new Map()) {
@@ -556,6 +598,9 @@ function extractResourceListFromAttributes(attrs) {
     const enchantmentRaw =
       attrs[`enchantmentlevel${suffix}`] ?? attrs.enchantmentlevel;
     const enchantmentLevel = Number(enchantmentRaw);
+    const maxReturnRaw =
+      attrs[`maxreturnamount${suffix}`] ?? attrs.maxreturnamount;
+    const maxReturnAmount = Number(maxReturnRaw);
 
     if (itemId && Number.isFinite(amount) && amount > 0) {
       out.push({
@@ -564,6 +609,10 @@ function extractResourceListFromAttributes(attrs) {
         enchantmentLevel:
           Number.isFinite(enchantmentLevel) && enchantmentLevel >= 0
             ? enchantmentLevel
+            : null,
+        maxReturnAmount:
+          Number.isFinite(maxReturnAmount) && maxReturnAmount >= 0
+            ? maxReturnAmount
             : null,
       });
     }
@@ -779,8 +828,19 @@ function validateManualRecipes(raw) {
           .map((i) => ({
             itemId: typeof i?.itemId === "string" ? i.itemId : null,
             amount: Number(i?.amount),
+            maxReturnAmount: Number.isFinite(Number(i?.maxReturnAmount))
+              ? Number(i.maxReturnAmount)
+              : Number.isFinite(Number(i?.maxreturnamount))
+                ? Number(i.maxreturnamount)
+                : null,
           }))
-          .filter((i) => i.itemId && Number.isFinite(i.amount) && i.amount > 0)
+          .filter(
+            (i) =>
+              i.itemId &&
+              Number.isFinite(i.amount) &&
+              i.amount > 0 &&
+              (i.maxReturnAmount === null || i.maxReturnAmount >= 0)
+          )
       : [];
 
     if (itemId && ingredients.length) {
