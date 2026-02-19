@@ -1,67 +1,88 @@
 # Albion Crafting Calculator - System Spec
 
 ## 1. Purpose
-- Provide a local web app to evaluate Albion crafting profitability by city.
-- Use market data + recipe data to estimate:
+- Local web app to evaluate Albion crafting profitability per city.
+- Estimates:
   - craft cost
   - sell price
-  - profit and margin
-  - estimated sell volume/day
-- Support cache-first operation with manual price editing.
+  - profit / margin
+  - estimated sell volume per day
+- Supports cache-first pricing, manual overrides, and craft planning.
 
 ## 2. Runtime Architecture
-- Frontend: static HTML/CSS/JS
+- Frontend (static):
   - `index.html`
   - `src/app.js`
   - `src/styles.css`
-- Backend: Node HTTP server
+- Backend (Node HTTP server):
   - `server.mjs`
-  - Serves static files and proxies/aggregates market endpoints.
-- Recipe cache (server-side file):
+  - serves static assets
+  - proxies Albion Data API for prices/history
+  - builds/serves recipe cache
+- Server recipe cache:
   - `data/recipes-cache.json`
-- Price cache (client-side browser localStorage):
-  - key: `albionCraftPriceCacheV1`
+  - guarded by `cacheVersion` (current code uses version `5`)
+- Browser price cache:
+  - localStorage key `albionCraftPriceCacheV1`
 
 ## 3. Data Sources
 - Recipe/name sources:
-  - ao-data / broderickhyman JSON + XML dumps
-  - local fallbacks in `data/` if present
-- Market sources (via backend proxy):
-  - `stats/prices` for live order-book values
-  - `stats/history` for average price and volume metrics
+  - ao-data and broderickhyman dumps (JSON + XML)
+  - local `data/` fallbacks when present
+- Market sources (through backend):
+  - `stats/prices` (live order-book values)
+  - `stats/history` (daily averages and volumes)
 
-## 4. API Surface (local backend)
+## 4. Backend API
 - `GET /api/recipes`
-  - Builds/loads recipe cache and returns normalized craftable recipes.
+  - loads cached recipes or rebuilds from sources
+  - supports `?force=1` to force rebuild
+  - returns normalized recipes and metadata (`cacheVersion`, `generatedAt`, `source`, `recipeCount`)
 - `POST /api/prices`
-  - Inputs:
-    - `city`, `itemIds[]`
+  - input:
+    - `city`
+    - `itemIds[]`
     - `mode`: `material | sell | buy | sell_avg | volume_avg`
-    - `quality` (fixed from frontend to normal=1)
-    - `averageDays` (for history modes)
-    - `fallbackToLive` (used for `sell_avg`)
-  - Output:
-    - `prices` map keyed by item id.
+    - `quality` (frontend always sends normal `1`)
+    - `averageDays` (history modes)
+    - `fallbackToLive` (optional for `sell_avg`)
+  - output:
+    - `prices` map keyed by item id
+- `GET /api/health`
+  - basic health check
 
-## 5. Pricing Rules Used by Calculator
+## 5. Price Rules Used by UI
 - Quality:
-  - always normal quality (`1`).
-- Materials:
-  - `material` mode from selected city
-  - backend picks `sell_price_min`, fallback `buy_price_max`.
-- Sell price (normal city mode):
-  - `sell_avg` with `averageDays=1`.
-- Sell price (Black Market mode):
-  - `sell_avg` with `averageDays=7`.
-- Sell volume estimate/day:
+  - always normal quality (`1`)
+- Material prices:
+  - city-local `material` fetch
+  - backend picks `sell_price_min` with `buy_price_max` fallback
+- Sell price source:
+  - city mode: `sell_avg` with `averageDays=1`
+  - Black Market mode: `sell_avg` with `averageDays=7`
+- Sell volume estimate:
   - `volume_avg` with `averageDays=30`
-  - weighted by recency (more recent days contribute more).
+  - weighted by recency
 - Material fallback:
-  - when material live price is still missing, frontend requests `sell_avg` (1 day) for those missing material ids and stores it as material price.
+  - if material live price is still missing, frontend fetches `sell_avg` (1 day) for those missing material ids and stores as material cache
 
-## 6. Cache Schema (browser localStorage)
-- Storage key: `albionCraftPriceCacheV1`
-- Structure:
+## 6. Recipe Payload Schema (normalized)
+- Each recipe entry:
+  - `itemId`
+  - `name`
+  - optional `tier`, `enchantment`, `category`
+  - `ingredients[]`
+- Ingredient entry:
+  - `itemId`
+  - `amount`
+  - optional `maxReturnAmount`
+    - `null`/missing means normal return-rate behavior
+    - `0` means non-returnable ingredient for RRR purposes
+    - positive values cap returned amount per craft
+
+## 7. Browser Price Cache Schema
+- localStorage key: `albionCraftPriceCacheV1`
+- structure:
 
 ```json
 {
@@ -81,97 +102,118 @@
 ```
 
 Notes:
-- `p`: integer price/metric.
-- `ts`: epoch milliseconds (last update time).
-- Missing entry means price=0.
-- Legacy numeric entries are accepted and treated as stale.
-- `blackMarket.buy` is legacy and not used by current calculator logic.
+- `p` is rounded numeric value.
+- `ts` is epoch ms update timestamp.
+- Missing entry = effective zero.
+- Legacy numeric cache entries are accepted and treated as stale.
+- Prices are isolated by city (no cross-city override).
 
-## 7. Fetch Policy
-- `Fetch Prices`:
-  - cache-first.
-  - API request only when scoped entry is:
-    - missing/zero, or
-    - stale (>= 1 hour old).
-- `Force Fetch API`:
-  - bypasses freshness and fetches full scoped set.
+## 8. Fetch Policy
+- Prices are not auto-fetched on load.
+- User triggers fetch with buttons:
+  - `Fetch Prices`: cache-first
+  - `Force Fetch API`: bypass freshness for current scope
+- Cache-first request rule:
+  - API call only if value is missing/zero or stale (>= 1 hour old)
 - Freshness threshold:
-  - 1 hour (`60 * 60 * 1000` ms).
+  - `60 * 60 * 1000` ms
 
-## 8. Scope of Requests
-- Scope derives from current Calculator filters:
-  - text, tier, category, enchant.
-- If no filters are set:
-  - full recipe scope.
+## 9. Request Scope
+- Scope is computed from current Calculator filters:
+  - name text, tier, category, enchantment
+- No filters = full recipe scope.
 - For scoped recipes:
-  - fetches crafted item ids (sell + volume)
-  - fetches ingredient ids (material prices)
-  - no cross-city material routing.
+  - crafted item ids: sell + sell-volume fetches
+  - ingredient ids: material fetches
+- No cross-city material routing (city-local modeling only).
 
-## 9. UI/UX Features
+## 10. UI Features
 - Tabs:
   - Calculator
   - Price Editor
-- Calculator:
-  - columns: item, tier, category, enchant, sell price, est sell/day, craft cost, profit, margin, missing prices.
-  - item name click expands ingredient breakdown row.
-  - expanded breakdown shows per-ingredient qty, effective qty, source, unit price, total cost.
-  - expanded breakdown supports inline save/clear of ingredient prices into cache.
-  - craft plan supports adding target output items with quantities.
-  - craft plan computes aggregated material buy quantities and estimated buy cost.
-  - highlight threshold (default 20%).
-  - bonus toggles/inputs: premium, city bonus, focus.
-  - optional Black Market sell source toggle.
+- Calculator table:
+  - columns:
+    - Item
+    - Tier / Category (merged, e.g. `4.1 Weapons`)
+    - Sell Price
+    - Est. Sell/Day (30d)
+    - Craft Cost
+    - Profit
+    - Margin
+    - Plan (`+` button)
+  - sortable by clicking column headers
+  - row highlight when margin >= threshold
+  - item name expands ingredient detail table
+  - ingredient detail supports inline price save/clear
+- Craft Plan:
+  - add items from calculator
+  - edit plan quantities inside plan table
+  - derived “Materials To Buy” aggregation
+  - totals summary:
+    - material buy cost
+    - craft cost
+    - sell value
+    - estimated profit
+    - margin
+    - incomplete planned item count (when applicable)
 - Price Editor:
-  - sections: common materials, artifacts, crafted items.
-  - filter by text/tier/category/enchant.
-  - direct cache editing (save/clear).
-  - collapsible sections.
+  - sections:
+    - Common Materials
+    - Artifacts
+    - Crafted Items
+  - per-section filters by text/tier/category/enchant
+  - direct cache editing (save/clear)
+  - collapsible sections (`<details>`)
 - Mobile:
-  - dedicated card-style calculator rows at small width.
+  - responsive card-style layout for calculator rows
 
-## 10. Calculation Model
-- Effective material amount:
-  - `required_amount * (1 - total_return_rate)`.
-- Total return rate:
-  - sum of enabled bonus rates, capped at 95%.
-- Craft tax:
-  - flat percent over effective material cost.
+## 11. Calculation Model
+- Total return rate (`rrr`):
+  - sum of enabled premium + city bonus + focus
+  - capped to `95%`
+- Effective ingredient amount (per ingredient):
+  - `base = ingredient.amount * craftQuantity`
+  - `rawReturned = base * rrr`
+  - if `maxReturnAmount` exists:
+    - `returned = min(rawReturned, maxReturnAmount * craftQuantity)`
+  - else:
+    - `returned = rawReturned`
+  - `effective = max(0, base - returned)`
+- Craft cost:
+  - `sum(effectiveIngredientAmount * ingredientPrice) * (1 + taxRate)`
 - Profit:
-  - `sellPrice - craftCost`.
+  - `sellPrice - craftCost`
 - Margin:
-  - `profit / craftCost`.
-- Missing ingredient prices:
-  - tracked per row; incomplete rows show missing count.
+  - `profit / craftCost`
+- Incomplete items:
+  - if any ingredient price missing or sell price missing, row metrics show `-`
 
-## 11. Category/Item Classification Notes
-- Item names are human-readable, enchant suffix included.
-- Category inference is item-id based with safeguards:
-  - artifact detection is prioritized to avoid weapon misclassification.
-- Enchant variants (`.0`-`.4`) are represented explicitly.
+## 12. Classification & Naming Notes
+- Human-readable names shown in UI.
+- Enchant variants (`.0` to `.4`) are represented explicitly.
+- Category inference is item-id based; artifact detection is prioritized to reduce misclassification into weapon/armor groups.
 
-## 12. Operational Notes
-- Start:
+## 13. Operational Notes
+- Run:
   - `node server.mjs`
   - open `http://localhost:5173`
-- First run:
-  - recipe cache build can take time.
-- Common failure classes:
-  - API 429/rate-limits
-  - temporary connectivity
-  - upstream dump schema/source changes
-- Backend includes retry/backoff for 429.
+- First recipe build may take time.
+- Known failure classes:
+  - Albion Data API rate limit (`429`)
+  - temporary network/CORS/proxy failures
+  - upstream source/schema changes
+- Backend has retry/backoff for rate limits.
 
-## 13. Restart Checklist
-- Ensure these files exist:
+## 14. Validation Checklist
+- Core files:
   - `server.mjs`
   - `src/app.js`
-  - `index.html`
   - `src/styles.css`
-- Ensure recipe cache can be rebuilt:
+  - `index.html`
+- Recipe cache can be generated:
   - `data/recipes-cache.json`
-- Verify localStorage key migration behavior:
+- Price cache key remains:
   - `albionCraftPriceCacheV1`
-- Run syntax checks if needed:
+- Optional syntax checks:
   - `node --check server.mjs`
   - `node --check src/app.js`

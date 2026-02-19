@@ -33,6 +33,8 @@ const ui = {
   filterTier: document.getElementById("filterTier"),
   filterCategory: document.getElementById("filterCategory"),
   filterEnchant: document.getElementById("filterEnchant"),
+  filterMinProfit: document.getElementById("filterMinProfit"),
+  filterMinSellDay: document.getElementById("filterMinSellDay"),
   clearPlanBtn: document.getElementById("clearPlanBtn"),
   planRows: document.getElementById("planRows"),
   planMaterialRows: document.getElementById("planMaterialRows"),
@@ -640,16 +642,31 @@ function getPriceEditorFilters() {
 }
 
 function getCalculatorFilters() {
+  const minProfitRaw = ui.filterMinProfit?.value?.trim?.() ?? "";
+  const minSellDayRaw = ui.filterMinSellDay?.value?.trim?.() ?? "";
+  const minProfit = minProfitRaw.length ? Number(minProfitRaw) : Number.NaN;
+  const minSellDay = minSellDayRaw.length ? Number(minSellDayRaw) : Number.NaN;
+  return {
+    search: ui.search.value.trim().toLowerCase(),
+    tier: ui.filterTier.value,
+    category: ui.filterCategory.value,
+    enchant: ui.filterEnchant.value,
+    minProfit: Number.isFinite(minProfit) ? minProfit : null,
+    minSellDay: Number.isFinite(minSellDay) ? minSellDay : null,
+  };
+}
+
+function hasAnyCalculatorFilter(filters) {
+  return Boolean(filters.search || filters.tier || filters.category || filters.enchant);
+}
+
+function getCalculatorScopeFilters() {
   return {
     search: ui.search.value.trim().toLowerCase(),
     tier: ui.filterTier.value,
     category: ui.filterCategory.value,
     enchant: ui.filterEnchant.value,
   };
-}
-
-function hasAnyCalculatorFilter(filters) {
-  return Boolean(filters.search || filters.tier || filters.category || filters.enchant);
 }
 
 function matchesCalculatorFilters(recipeOrRow, filters) {
@@ -668,11 +685,23 @@ function matchesCalculatorFilters(recipeOrRow, filters) {
   ) {
     return false;
   }
+  if (Number.isFinite(filters.minProfit)) {
+    const profit = Number(recipeOrRow?.profit);
+    if (!Number.isFinite(profit) || profit < filters.minProfit) {
+      return false;
+    }
+  }
+  if (Number.isFinite(filters.minSellDay)) {
+    const sellVolume = Number(recipeOrRow?.sellVolume);
+    if (!Number.isFinite(sellVolume) || sellVolume < filters.minSellDay) {
+      return false;
+    }
+  }
   return true;
 }
 
 function getRecipesForFetch(recipes) {
-  const filters = getCalculatorFilters();
+  const filters = getCalculatorScopeFilters();
   if (!hasAnyCalculatorFilter(filters)) {
     return recipes;
   }
@@ -1719,7 +1748,7 @@ async function refreshPriceFeedWithOptions(options = {}) {
     scopedItemCount: new Set([...ingredientIds, ...craftIds]).size,
     ingredientCount: ingredientIds.length,
     scopedCraftCount: craftIds.length,
-    usedFilters: hasAnyCalculatorFilter(getCalculatorFilters()),
+    usedFilters: hasAnyCalculatorFilter(getCalculatorScopeFilters()),
     apiFetched:
       fetchedMaterialCount +
       fetchedMaterialFallbackCount +
@@ -1878,6 +1907,8 @@ ui.search.addEventListener("input", () => renderRows(lastComputedRows));
 ui.filterTier.addEventListener("change", () => renderRows(lastComputedRows));
 ui.filterCategory.addEventListener("change", () => renderRows(lastComputedRows));
 ui.filterEnchant.addEventListener("change", () => renderRows(lastComputedRows));
+ui.filterMinProfit?.addEventListener("input", () => renderRows(lastComputedRows));
+ui.filterMinSellDay?.addEventListener("input", () => renderRows(lastComputedRows));
 
 ui.tabCalculator.addEventListener("click", () => setActiveTab("calculator"));
 ui.tabPrices.addEventListener("click", () => {

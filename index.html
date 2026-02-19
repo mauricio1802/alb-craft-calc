@@ -104,6 +104,33 @@
                 <option value="4">.4</option>
               </select>
             </div>
+            <details class="advanced-filters">
+              <summary>Advanced Filters</summary>
+              <div class="advanced-filters-grid">
+                <label>
+                  Min Profit
+                  <input
+                    id="filterMinProfit"
+                    type="number"
+                    step="1"
+                    placeholder="e.g. 5000"
+                  />
+                </label>
+                <label>
+                  Min Est. Sell/Day
+                  <input
+                    id="filterMinSellDay"
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="e.g. 10"
+                  />
+                </label>
+              </div>
+              <p class="soft advanced-filters-note">
+                These filters only affect displayed rows. They do not change fetch scope.
+              </p>
+            </details>
           </div>
 
           <div class="table-wrap">
